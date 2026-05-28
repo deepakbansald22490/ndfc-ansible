@@ -1,8 +1,7 @@
 # Cisco NDFC Ansible Lab
 
-This repository contains my Cisco NDFC and Ansible learning lab.
+This repository contains my Cisco NDFC automation Ansible playbook, python or many more
 
-The goal is to build practical network automation skills using:
 
 - Cisco NDFC
 - Ansible
