@@ -1,0 +1,14 @@
+---
+target_switch: DC1-Leaf1
+target_interface: Ethernet1/6
+
+# Only access or trunk. VLAN attachment is handled by separate NDFC network workflows.
+port_mode: access
+
+interface_admin_state: true
+interface_bpdu_guard: true
+interface_port_type_fast: true
+interface_mtu: jumbo
+interface_description: "Configured by Ansible via NDFC"
+interface_cmds:
+  - no shutdown

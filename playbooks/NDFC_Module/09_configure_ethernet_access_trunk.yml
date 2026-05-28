@@ -1,0 +1,66 @@
+---
+- name: Configure Ethernet interface mode and safety settings
+  hosts: ndfc-controller
+  gather_facts: false
+  vars_files:
+    - ../../vars/interface_config_request.yml
+
+  tasks:
+    - name: Validate interface configuration input
+      ansible.builtin.assert:
+        that:
+          - target_switch in groups['leafs']
+          - target_interface is defined
+          - port_mode is defined
+          - port_mode in ['access', 'trunk']
+          - interface_admin_state is defined
+          - interface_bpdu_guard is defined
+          - interface_port_type_fast is defined
+          - interface_mtu is defined
+          - interface_mtu in ['default', 'jumbo']
+          - interface_description is defined
+          - hostvars[target_switch].switch_ip is defined
+          - hostvars[target_switch].fabric_name is defined
+        fail_msg:
+          - "Inputs target_switch, target_interface, port_mode, and interface safety settings are required."
+          - "Allowed port_mode values are access and trunk."
+          - "Allowed interface_mtu values are default and jumbo."
+
+    - name: Verify requested Ethernet interface settings
+      ansible.builtin.debug:
+        msg:
+          - "target_switch = {{ target_switch }}"
+          - "target_interface = {{ target_interface }}"
+          - "fabric_name = {{ hostvars[target_switch].fabric_name }}"
+          - "switch_ip = {{ hostvars[target_switch].switch_ip }}"
+          - "port_mode = {{ port_mode }}"
+          - "admin_state = {{ interface_admin_state }}"
+          - "bpdu_guard = {{ interface_bpdu_guard }}"
+          - "port_type_fast = {{ interface_port_type_fast }}"
+          - "mtu = {{ interface_mtu }}"
+          - "description = {{ interface_description }}"
+          - "cmds = {{ interface_cmds | default([]) }}"
+
+    - name: Configure Ethernet interface using NDFC
+      cisco.dcnm.dcnm_interface:
+        fabric: "{{ hostvars[target_switch].fabric_name }}"
+        state: merged
+        config:
+          - name: "{{ target_interface }}"
+            type: eth
+            switch:
+              - "{{ hostvars[target_switch].switch_ip }}"
+            deploy: true
+            profile:
+              admin_state: "{{ interface_admin_state }}"
+              mode: "{{ port_mode }}"
+              bpdu_guard: "{{ interface_bpdu_guard }}"
+              port_type_fast: "{{ interface_port_type_fast }}"
+              mtu: "{{ interface_mtu }}"
+              description: "{{ interface_description }}"
+              cmds: "{{ interface_cmds | default([]) }}"
+      register: interface_config_result
+
+    - name: Show Ethernet interface configuration result
+      ansible.builtin.debug:
+        var: interface_config_result
