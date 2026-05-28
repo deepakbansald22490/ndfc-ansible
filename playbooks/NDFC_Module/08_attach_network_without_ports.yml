@@ -1,0 +1,93 @@
+---
+- name: Check and attach network to target leaf without switch ports
+  hosts: ndfc-controller
+  gather_facts: false
+  vars_files:
+    - ../../vars/network_attach_request.yml
+
+  tasks:
+    - name: Validate the user input
+      ansible.builtin.assert:
+        that:
+          - target_switch in groups['leafs']
+          - network_name is defined
+          - hostvars[target_switch].switch_ip is defined
+          - hostvars[target_switch].fabric_name is defined
+          - hostvars[target_switch].msd_name is defined
+          - hostvars[target_switch].serial_number is defined
+        fail_msg:
+          - "Inputs target_switch and network_name are required and cannot be empty."
+          - "Check vars/network_attach_request.yml or host_vars for missing values."
+
+    - name: Verify input values before NDFC query
+      ansible.builtin.debug:
+        msg:
+          - "target_switch = {{ target_switch }}"
+          - "MSD_name = {{ hostvars[target_switch].msd_name }}"
+          - "fabric_name = {{ hostvars[target_switch].fabric_name }}"
+          - "switch_ip = {{ hostvars[target_switch].switch_ip }}"
+          - "serial_number = {{ hostvars[target_switch].serial_number }}"
+          - "network_name = {{ network_name }}"
+
+    - name: Get network attachment status from NDFC
+      cisco.dcnm.dcnm_rest:
+        method: GET
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ hostvars[target_switch].msd_name }}/networks/attachments?network-names={{ network_name }}&switch-name={{ target_switch }}"
+      register: network_attachment_info
+
+    - name: Extract all LAN attachment entries
+      ansible.builtin.set_fact:
+        all_lan_attachments: >-
+          {{
+            network_attachment_info.response.DATA
+            | default([])
+            | map(attribute='lanAttachList')
+            | flatten
+          }}
+
+    - name: Extract target leaf attachment entry
+      ansible.builtin.set_fact:
+        target_leaf_attachment: >-
+          {{
+            all_lan_attachments
+            | selectattr('switchName', 'equalto', target_switch)
+            | list
+            | first
+            | default({})
+          }}
+
+    - name: Confirm network exists for target leaf in NDFC response
+      ansible.builtin.assert:
+        that:
+          - target_leaf_attachment | length > 0
+        fail_msg: "Network {{ network_name }} was not found for target leaf {{ target_switch }}."
+        success_msg: "Network {{ network_name }} was found for target leaf {{ target_switch }}."
+
+    - name: Show target leaf network attachment state
+      ansible.builtin.debug:
+        msg:
+          - "network_name = {{ target_leaf_attachment.networkName }}"
+          - "switch_name = {{ target_leaf_attachment.switchName }}"
+          - "is_lan_attached = {{ target_leaf_attachment.isLanAttached }}"
+          - "lan_attach_state = {{ target_leaf_attachment.lanAttachState }}"
+
+    - name: Report when network is already deployed on target leaf
+      ansible.builtin.debug:
+        msg: "Network {{ network_name }} is already deployed on {{ target_switch }}."
+      when:
+        - target_leaf_attachment.lanAttachState == 'DEPLOYED'
+
+    - name: Attach network to target leaf without switch ports
+      cisco.dcnm.dcnm_rest:
+        method: POST
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ hostvars[target_switch].fabric_name }}/networks/{{ network_name }}/attachments"
+        json_data: '{"fabric":"{{ hostvars[target_switch].fabric_name }}","networkName":"{{ network_name }}","serialNumber":"{{ hostvars[target_switch].serial_number }}","deployment":true}'
+      register: network_attach_result
+      when:
+        - target_leaf_attachment.lanAttachState != 'DEPLOYED'
+
+    - name: Show network attach result
+      ansible.builtin.debug:
+        var: network_attach_result
+      when:
+        - target_leaf_attachment.lanAttachState != 'DEPLOYED'

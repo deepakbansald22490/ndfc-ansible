@@ -1,0 +1,10 @@
+---
+ansible_connection: ansible.netcommon.httpapi
+ansible_network_os: cisco.dcnm.dcnm
+ansible_user: "{{ lookup('env', 'NDFC_USER') }}"
+ansible_password: "{{ lookup('env', 'NDFC_PASSWORD') }}"
+ansible_httpapi_use_ssl: true
+ansible_httpapi_validate_certs: false
+ansible_httpapi_login_domain: local
+ansible_command_timeout: 300
+ansible_connect_timeout: 60

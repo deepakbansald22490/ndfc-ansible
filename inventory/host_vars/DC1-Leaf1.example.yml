@@ -1,0 +1,5 @@
+---
+fabric_name: A0-DC1
+msd_name: Areazero-network
+switch_ip: 192.0.2.55
+serial_number: EXAMPLE12345
