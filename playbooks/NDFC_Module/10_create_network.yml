@@ -1,0 +1,368 @@
+---
+- name: Create network in NDFC fabric using REST API
+  hosts: ndfc-controller
+  gather_facts: false
+  vars_files:
+    - ../../vars/network_create_request.yml
+
+  tasks:
+    - name: Validate network creation input
+      ansible.builtin.assert:
+        that:
+          - fabric_name is defined
+          - vrf_name is defined
+          - vrf_id is defined
+          - vrf_vlan_id is defined
+          - vrf_vlan_name is defined
+          - vrf_interface_description is defined
+          - vrf_description is defined
+          - network_name is defined
+          - network_id is defined
+          - network_vlan_id is defined
+          - network_gateway is defined
+          - vlan_name is defined
+          - interface_description is defined
+          - mtu is defined
+        fail_msg:
+          - "Inputs fabric_name, VRF values, network values, vlan_name, interface_description, and mtu are required."
+          - "Check vars/network_create_request.yml for missing or incorrect values."
+
+    - name: Verify network creation values
+      ansible.builtin.debug:
+        msg:
+          - "fabric_name = {{ fabric_name }}"
+          - "vrf_name = {{ vrf_name }}"
+          - "vrf_id = {{ vrf_id }}"
+          - "vrf_vlan_id = {{ vrf_vlan_id }}"
+          - "vrf_vlan_name = {{ vrf_vlan_name }}"
+          - "vrf_interface_description = {{ vrf_interface_description }}"
+          - "vrf_description = {{ vrf_description }}"
+          - "network_name = {{ network_name }}"
+          - "network_id = {{ network_id }}"
+          - "network_vlan_id = {{ network_vlan_id }}"
+          - "network_gateway = {{ network_gateway }}"
+          - "vlan_name = {{ vlan_name }}"
+          - "interface_description = {{ interface_description }}"
+          - "mtu = {{ mtu }}"
+
+    - name: Confirm values before creating VRF and network
+      ansible.builtin.pause:
+        prompt: "Review the values above. Type yes/y to continue, or no/n to stop"
+      register: create_network_confirmation
+
+    - name: Stop if user answered no
+      ansible.builtin.fail:
+        msg: "VRF and network creation stopped by user."
+      when:
+        - create_network_confirmation.user_input | lower in ['no', 'n']
+
+    - name: Stop if user entered invalid confirmation
+      ansible.builtin.fail:
+        msg: "Invalid input. Please run again and type yes/y or no/n."
+      when:
+        - create_network_confirmation.user_input | lower not in ['yes', 'y', 'no', 'n']
+
+    - name: Query existing VRFs in target fabric
+      cisco.dcnm.dcnm_rest:
+        method: GET
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ fabric_name }}/vrfs"
+      register: vrf_query_result
+
+    - name: Extract target VRF entry
+      ansible.builtin.set_fact:
+        target_vrf_entry: >-
+          {{
+            vrf_query_result.response.DATA
+            | default([])
+            | selectattr('vrfName', 'equalto', vrf_name)
+            | list
+            | first
+            | default({})
+          }}
+
+    - name: Report when VRF already exists
+      ansible.builtin.debug:
+        msg: "VRF {{ vrf_name }} already exists in fabric {{ fabric_name }}."
+      when:
+        - target_vrf_entry | length > 0
+
+    - name: Build VRF template config JSON
+      ansible.builtin.set_fact:
+        vrf_template_config: >-
+          {{
+            {
+              "vrfVlanName": vrf_vlan_name,
+              "vrfIntfDescription": vrf_interface_description,
+              "vrfDescription": vrf_description,
+              "mtu": vrf_mtu | default(mtu) | string,
+              "tag": vrf_routing_tag | default(""),
+              "vrfRouteMap": vrf_route_map | default("FABRIC-RMAP-REDIST-SUBNET"),
+              "maxBgpPaths": max_bgp_paths | default("1"),
+              "maxIbgpPaths": max_ibgp_paths | default("2"),
+              "ipv6LinkLocalFlag": "true",
+              "trmEnabled": "false",
+              "isRPAbsent": false,
+              "isRPExternal": false,
+              "rpAddress": "",
+              "loopbackNumber": "",
+              "L3VniMcastGroup": "",
+              "multicastGroup": "",
+              "trmBGWMSiteEnabled": false,
+              "advertiseHostRouteFlag": "false",
+              "advertiseDefaultRouteFlag": "true",
+              "configureStaticDefaultRouteFlag": "true",
+              "bgpPassword": "",
+              "bgpPasswordKeyType": "3",
+              "ENABLE_NETFLOW": "false",
+              "NETFLOW_MONITOR": "",
+              "disableRtAuto": "false",
+              "routeTargetImport": "",
+              "routeTargetExport": "",
+              "routeTargetImportEvpn": "",
+              "routeTargetExportEvpn": "",
+              "routeTargetImportMvpn": "",
+              "routeTargetExportMvpn": "",
+              "vrfName": vrf_name,
+              "vrfVlanId": vrf_vlan_id | int,
+              "vrfSegmentId": vrf_id | int,
+              "nveId": nve_id | default("1"),
+              "asn": ""
+            } | to_json
+          }}
+      when:
+        - target_vrf_entry | length == 0
+
+    - name: Build VRF create payload JSON
+      ansible.builtin.set_fact:
+        vrf_create_payload: >-
+          {{
+            {
+              "fabric": fabric_name,
+              "vrfName": vrf_name,
+              "vrfTemplate": vrf_template | default("Default_VRF_Universal"),
+              "vrfExtensionTemplate": vrf_extension_template | default("Default_VRF_Extension_Universal"),
+              "vrfTemplateConfig": vrf_template_config,
+              "vrfId": vrf_id | int
+            } | to_json
+          }}
+      when:
+        - target_vrf_entry | length == 0
+
+    - name: Create VRF in NDFC using REST when missing
+      cisco.dcnm.dcnm_rest:
+        method: POST
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ fabric_name }}/vrfs"
+        json_data: "{{ vrf_create_payload }}"
+      register: vrf_create_result
+      when:
+        - target_vrf_entry | length == 0
+
+    - name: Show VRF creation result
+      ansible.builtin.debug:
+        var: vrf_create_result
+      when:
+        - target_vrf_entry | length == 0
+
+    - name: Query existing networks in target fabric
+      cisco.dcnm.dcnm_rest:
+        method: GET
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ fabric_name }}/networks"
+      register: network_query_result
+
+    - name: Extract existing networks from NDFC
+      ansible.builtin.set_fact:
+        existing_networks: "{{ network_query_result.response.DATA | default([]) }}"
+
+    - name: Extract target network entry by case-insensitive name
+      ansible.builtin.set_fact:
+        target_network_entry: "{{ item }}"
+      loop: "{{ existing_networks }}"
+      when:
+        - item.networkName | lower == network_name | lower
+
+    - name: Default target network entry when network name is not found
+      ansible.builtin.set_fact:
+        target_network_entry: "{{ target_network_entry | default({}) }}"
+
+    - name: Extract target network template config
+      ansible.builtin.set_fact:
+        target_network_template: >-
+          {{
+            target_network_entry.networkTemplateConfig
+            | default('{}')
+            | from_json
+          }}
+      when:
+        - target_network_entry | length > 0
+
+    - name: Check if existing target network already matches desired values
+      ansible.builtin.set_fact:
+        target_network_matches_desired: >-
+          {{
+            target_network_entry | length > 0
+            and target_network_entry.networkId | default('') | string == network_id | string
+            and target_network_template.vlanId | default('') | string == network_vlan_id | string
+            and target_network_template.gatewayIpAddress | default('') == network_gateway
+            and (
+              target_network_entry.vrf | default('') == vrf_name
+              or target_network_template.vrfName | default('') == vrf_name
+            )
+          }}
+
+    - name: Stop if existing target network has different values
+      ansible.builtin.fail:
+        msg:
+          - "Network {{ network_name }} already exists, but it does not match the requested values."
+          - "Existing network_id={{ target_network_entry.networkId | default('') }}, vlan_id={{ target_network_template.vlanId | default('') }}, gateway={{ target_network_template.gatewayIpAddress | default('') }}, vrf={{ target_network_entry.vrf | default(target_network_template.vrfName | default('')) }}"
+          - "Requested network_id={{ network_id }}, vlan_id={{ network_vlan_id }}, gateway={{ network_gateway }}, vrf={{ vrf_name }}"
+      when:
+        - target_network_entry | length > 0
+        - not (target_network_matches_desired | bool)
+
+    - name: Report when network already exists with desired values
+      ansible.builtin.debug:
+        msg: "Network {{ network_name }} already exists with desired values. Network creation will be skipped."
+      when:
+        - target_network_entry | length > 0
+        - target_network_matches_desired | bool
+
+    - name: Check if network ID is used by another network
+      ansible.builtin.set_fact:
+        existing_network_by_id: >-
+          {{
+            existing_networks
+            | selectattr('networkId', 'equalto', network_id | int)
+            | list
+          }}
+      when:
+        - target_network_entry | length == 0
+
+    - name: Build existing network detail list
+      ansible.builtin.set_fact:
+        existing_network_details: >-
+          {{
+            existing_network_details | default([])
+            + [
+              item | combine({
+                'template': item.networkTemplateConfig | default('{}') | from_json
+              })
+            ]
+          }}
+      loop: "{{ existing_networks }}"
+
+    - name: Check if VLAN ID already exists
+      ansible.builtin.set_fact:
+        existing_network_by_vlan: "{{ existing_network_by_vlan | default([]) + [item] }}"
+      loop: "{{ existing_network_details | default([]) }}"
+      when:
+        - target_network_entry | length == 0
+        - item.networkName | lower != network_name | lower
+        - item.template.vlanId | default('') | string == network_vlan_id | string
+
+    - name: Check if gateway subnet already exists
+      ansible.builtin.set_fact:
+        existing_network_by_gateway: "{{ existing_network_by_gateway | default([]) + [item] }}"
+      loop: "{{ existing_network_details | default([]) }}"
+      when:
+        - target_network_entry | length == 0
+        - item.networkName | lower != network_name | lower
+        - item.template.gatewayIpAddress | default('') == network_gateway
+
+    - name: Stop if network ID is used by another network
+      ansible.builtin.fail:
+        msg: "Network ID {{ network_id }} is already used by another network in fabric {{ fabric_name }}."
+      when:
+        - target_network_entry | length == 0
+        - existing_network_by_id | default([]) | length > 0
+
+    - name: Stop if VLAN ID is used by another network
+      ansible.builtin.fail:
+        msg: "VLAN ID {{ network_vlan_id }} is already used by another network."
+      when:
+        - target_network_entry | length == 0
+        - existing_network_by_vlan | default([]) | length > 0
+
+    - name: Stop if gateway subnet is used by another network
+      ansible.builtin.fail:
+        msg: "Gateway/subnet {{ network_gateway }} is already used by another network."
+      when:
+        - target_network_entry | length == 0
+        - existing_network_by_gateway | default([]) | length > 0
+
+    - name: Build network template config JSON
+      ansible.builtin.set_fact:
+        network_template_config: >-
+          {{
+            {
+              "gatewayIpAddress": network_gateway,
+              "gatewayIpV6Address": "",
+              "vlanName": vlan_name,
+              "intfDescription": interface_description,
+              "mtu": mtu | string,
+              "secondaryGW1": "",
+              "secondaryGW2": "",
+              "secondaryGW3": "",
+              "secondaryGW4": "",
+              "type": "",
+              "dhcpServerAddr1": "",
+              "vrfDhcp": "",
+              "dhcpServerAddr2": "",
+              "vrfDhcp2": "",
+              "dhcpServerAddr3": "",
+              "vrfDhcp3": "",
+              "suppressArp": "",
+              "enableIR": "false",
+              "mcastGroup": multicast_group | default(""),
+              "dhcpServers": "",
+              "loopbackId": "",
+              "tag": routing_tag | default(""),
+              "trmEnabled": "",
+              "rtBothAuto": "false",
+              "ENABLE_NETFLOW": "false",
+              "SVI_NETFLOW_MONITOR": "",
+              "VLAN_NETFLOW_MONITOR": "",
+              "enableL3OnBorder": "false",
+              "vlanId": network_vlan_id | int,
+              "segmentId": network_id | int,
+              "vrfName": vrf_name,
+              "networkName": network_name,
+              "nveId": nve_id | default("1"),
+              "isLayer2Only": false
+            } | to_json
+          }}
+      when:
+        - target_network_entry | length == 0
+
+    - name: Build network create payload JSON
+      ansible.builtin.set_fact:
+        network_create_payload: >-
+          {{
+            {
+              "fabric": fabric_name,
+              "networkName": network_name,
+              "displayName": network_display_name | default(network_name),
+              "networkId": network_id | int,
+              "networkTemplate": network_template | default("Default_Network_Universal"),
+              "networkExtensionTemplate": network_extension_template | default("Default_Network_Extension_Universal"),
+              "networkTemplateConfig": network_template_config,
+              "vrf": vrf_name,
+              "type": network_type | default("Normal")
+            } | to_json
+          }}
+      when:
+        - target_network_entry | length == 0
+
+    - name: Create network object in NDFC using REST
+      cisco.dcnm.dcnm_rest:
+        method: POST
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ fabric_name }}/networks"
+        json_data: "{{ network_create_payload }}"
+      register: network_create_result
+      when:
+        - target_network_entry | length == 0
+
+    - name: Show network creation result
+      ansible.builtin.debug:
+        var: network_create_result
+      when:
+        - target_network_entry | length == 0

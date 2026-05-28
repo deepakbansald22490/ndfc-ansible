@@ -1,0 +1,28 @@
+---
+fabric_name: Areazero-network
+
+vrf_name: VRF-EXAMPLE
+vrf_id: 500113
+vrf_vlan_id: 2013
+vrf_vlan_name: VL_VRF_EXAMPLE
+vrf_interface_description: "VRF SVI for example tenant"
+vrf_description: "Example VRF created by Ansible via NDFC REST"
+
+network_name: vpc_vlan_113
+network_id: 100113
+network_vlan_id: 113
+network_gateway: 10.113.0.1/24
+vlan_name: VL_113
+interface_description: "SVI for VLAN 113"
+mtu: 1500
+
+# Optional values. Defaults are used by the playbook if these are not set.
+network_template: Default_Network_Universal
+network_extension_template: Default_Network_Extension_Universal
+network_type: Normal
+vrf_template: Default_VRF_Universal
+vrf_extension_template: Default_VRF_Extension_Universal
+nve_id: "1"
+multicast_group: ""
+routing_tag: ""
+vrf_routing_tag: ""
