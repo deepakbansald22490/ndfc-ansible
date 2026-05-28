@@ -23,7 +23,7 @@ The current playbooks focus on NDFC network attachment workflows:
 ```text
 playbooks/
   NDFC_Module/
-    08_attach_network_without_ports.yml
+    Attach_network_without_ports.yml
 inventory/
   inventory.example.yml
   group_vars/
