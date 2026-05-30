@@ -1,5 +1,5 @@
 ---
-- name: Create network in NDFC fabric using REST API without attached to leaf
+- name: Create Network and VRF in MSD
   hosts: ndfc-controller
   gather_facts: false
   vars_files:
