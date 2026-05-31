@@ -1,0 +1,10 @@
+---
+fabric_name: A0-DC1
+
+# Leave empty to query all VRFs in the fabric.
+query_vrfs: []
+
+# Example for querying specific VRFs only:
+# query_vrfs:
+#   - vrf_name: DC-IT-TRA
+#   - vrf_name: DC-OT-TRA

@@ -1,0 +1,51 @@
+---
+- name: Query NDFC fabric VRFs
+  hosts: ndfc-controller
+  gather_facts: false
+  vars_files:
+    - ../../vars/vrf_query_request.yml
+
+  tasks:
+    - name: Validate VRF query input
+      ansible.builtin.assert:
+        that:
+          - fabric_name is defined
+        fail_msg:
+          - "Input fabric_name is required."
+          - "Check vars/vrf_query_request.yml for missing or incorrect values."
+
+    - name: Show VRF query target
+      ansible.builtin.debug:
+        msg:
+          - "fabric_name = {{ fabric_name }}"
+
+    - name: List VRFs from target fabric using REST
+      cisco.dcnm.dcnm_rest:
+        method: GET
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/v2/fabrics/{{ fabric_name }}/vrfs"
+      register: vrf_query_result
+
+    - name: Show raw VRF query result
+      ansible.builtin.debug:
+        var: vrf_query_result
+
+    - name: Extract VRF response list
+      ansible.builtin.set_fact:
+        fabric_vrf_items: >-
+          {{
+            vrf_query_result.response.DATA
+            | default(vrf_query_result.response | default([]), true)
+          }}
+
+    - name: Show VRF summary
+      ansible.builtin.debug:
+        msg:
+          - "vrf_name = {{ item.vrfName | default(item.name | default(item.displayName | default('unknown'), true), true) }}"
+          - "vrf_id = {{ item.vrfId | default(item.id | default('unknown'), true) }}"
+          - "vlan_id = {{ item.vlanId | default(item.vlanID | default('unknown'), true) }}"
+          - "status = {{ item.status | default(item.vrfStatus | default('unknown', true), true) }}"
+      loop: "{{ fabric_vrf_items }}"
+      loop_control:
+        label: "{{ item.vrfName | default(item.name | default(item.displayName | default('unknown'), true), true) }}"
+      when:
+        - fabric_vrf_items | length > 0
