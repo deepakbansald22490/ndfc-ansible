@@ -1,0 +1,53 @@
+---
+- name: 07. Query NDFC fabric networks
+  hosts: ndfc-controller
+  gather_facts: false
+  vars_files:
+    - ../../vars/network_query_request.yml
+
+  tasks:
+    - name: Validate network query input
+      ansible.builtin.assert:
+        that:
+          - fabric_name is defined
+        fail_msg:
+          - "Input fabric_name is required."
+          - "Check vars/network_query_request.yml for missing or incorrect values."
+
+    - name: Show network query target
+      ansible.builtin.debug:
+        msg:
+          - "fabric_name = {{ fabric_name }}"
+
+    - name: Query existing networks in target fabric
+      cisco.dcnm.dcnm_rest:
+        method: GET
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/top-down/fabrics/{{ fabric_name }}/networks"
+      register: network_query_result
+
+    # - name: Show raw network query result
+    #  ansible.builtin.debug:
+    #    var: network_query_result
+
+    - name: Extract network response list
+      ansible.builtin.set_fact:
+        fabric_network_items: >-
+          {{
+            network_query_result.response.DATA
+            | default(network_query_result.response | default([]), true)
+          }}
+
+    - name: Show network summary
+      ansible.builtin.debug:
+        msg:
+          - "network_name = {{ item.networkName | default(item.name | default(item.displayName | default('unknown'), true), true) }}"
+          - "network_id = {{ item.networkId | default(item.segmentId | default('unknown'), true) }}"
+          - "gateway_ip_address = {{ ((item.networkTemplateConfig | default('{}', true) | from_json).gatewayIpAddress | default('unknown', true)) }}"
+          - "vlan_id = {{ ((item.networkTemplateConfig | default('{}', true) | from_json).vlanId | default('unknown', true)) }}"
+          - "vrf_name = {{ item.vrf | default(item.template.vrfName | default('unknown'), true) }}"
+          - "status = {{ item.networkStatus | default(item.status | default('unknown'), true) }}"
+      loop: "{{ fabric_network_items }}"
+      loop_control:
+        label: "{{ item.networkName | default(item.name | default(item.displayName | default('unknown'), true), true) }}"
+      when:
+        - fabric_network_items | length > 0
