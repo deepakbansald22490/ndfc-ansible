@@ -1,0 +1,10 @@
+---
+fabric_name: A0-DC1
+
+# Leave empty to query all switches in the fabric.
+query_switches: []
+
+# Example for querying selected switches only:
+# query_switches:
+#   - seed_ip: 192.0.2.55
+#     role: leaf

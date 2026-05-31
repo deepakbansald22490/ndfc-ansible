@@ -1,0 +1,58 @@
+---
+- name: Query NDFC fabric inventory
+  hosts: ndfc-controller
+  gather_facts: false
+  vars_files:
+    - ../../vars/inventory_query_request.yml
+
+  tasks:
+    - name: Validate inventory query input
+      ansible.builtin.assert:
+        that:
+          - fabric_name is defined
+        fail_msg:
+          - "Input fabric_name is required."
+          - "Check vars/inventory_query_request.yml for missing or incorrect values."
+
+    - name: Show inventory query target
+      ansible.builtin.debug:
+        msg:
+          - "fabric_name = {{ fabric_name }}"
+          - "query_switches = {{ query_switches | default([]) }}"
+
+    - name: Query all switches in fabric inventory
+      cisco.dcnm.dcnm_inventory:
+        fabric: "{{ fabric_name }}"
+        state: query
+      register: fabric_inventory_result
+      when:
+        - query_switches | default([]) | length == 0
+
+    - name: Query selected switches in fabric inventory
+      cisco.dcnm.dcnm_inventory:
+        fabric: "{{ fabric_name }}"
+        state: query
+        config: "{{ query_switches }}"
+      register: fabric_inventory_result
+      when:
+        - query_switches | default([]) | length > 0
+
+    - name: Show raw fabric inventory result
+      ansible.builtin.debug:
+        var: fabric_inventory_result
+
+    - name: Extract inventory response list
+      ansible.builtin.set_fact:
+        fabric_inventory_items: "{{ fabric_inventory_result.response | default([]) }}"
+
+    - name: Show fabric inventory summary
+      ansible.builtin.debug:
+        msg:
+          - "switch_name = {{ item.hostName | default(item.logicalName | default(item.switchName | default('unknown')), true) }}"
+          - "management_ip = {{ item.ipAddress | default(item.seedIP | default(item.seed_ip | default('unknown')), true) }}"
+          - "serial_number = {{ item.serialNumber | default(item.serialNo | default('unknown'), true) }}"
+          - "role = {{ item.switchRole | default(item.switchRoleEnum | default(item.role | default('unknown')), true) }}"
+          - "status = {{ item.status | default(item.switchStatus | default(item.inventoryStatus | default('unknown')), true) }}"
+      loop: "{{ fabric_inventory_items }}"
+      when:
+        - fabric_inventory_items | length > 0
